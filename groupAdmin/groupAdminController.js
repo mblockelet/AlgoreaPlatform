@@ -1038,12 +1038,10 @@ angular.module('algorea')
 
 
    $scope.$on('login.login', function(event, data) {
-    if (data.tempUser) {
-       $state.go('profile');
-    } else {
-       $state.go('profile', { section: 'groupsOwner'});
-    }
- });
+      if(data.tempUser) {
+         $state.go('profile');
+      }
+   });
 
    $scope.loading = true;
    itemService.onNewLoad($scope.init);

@@ -1,7 +1,7 @@
 'use strict';
 
 angular.module('algorea')
-   .controller('taskController', ['$scope', '$rootScope', '$window', '$location', '$interval', '$injector', '$http', '$timeout', '$i18next', function ($scope, $rootScope, $window, $location, $interval, $injector, $http, $timeout, $i18next) {
+   .controller('taskController', ['$scope', '$rootScope', '$window', '$location', '$interval', '$injector', '$http', '$timeout', '$i18next', 'tabsService', function ($scope, $rootScope, $window, $location, $interval, $injector, $http, $timeout, $i18next, tabsService) {
    var itemService, $state;
    if ($injector.has('itemService')) {
       itemService = $injector.get('itemService');
@@ -9,14 +9,12 @@ angular.module('algorea')
    if ($injector.has('$state')) {
       $state = $injector.get('$state');
    }
-   $scope.resolutionViewName = 'editor';
+   $scope.tabsService = tabsService;
    $scope.showForum = false;
    $scope.showTask = true;
-   var defaultViewName = 'task';
    if ($scope.inTask) {
       // task inside forum inside task!
       $scope.taskInsideForumInsideTask = true;
-      defaultViewName = 'editor';
    }
    $scope.inTask = true;
 
@@ -36,9 +34,7 @@ angular.module('algorea')
          'editor': {tabString: 'task_solve', taskViews: {'editor': true}},
          'hints': {tabString: 'task_hints', taskViews: {'hints': true}},
          'history': {tabString: 'task_history'},
-         'modify': {tabString: 'task_modify'},
-         'settings': {tabString: 'task_settings'},
-         'strings': {tabString: 'task_strings'}
+         'modify': {tabString: 'task_modify'}
       };
       if(platformOnly || !$scope.item.bHasAttempts) {
          delete(platformViews.attempts);
@@ -46,8 +42,6 @@ angular.module('algorea')
       }
       if(!$scope.isEditMode('edit')) {
          delete(platformViews.modify);
-         delete(platformViews.settings);
-         delete(platformViews.strings);
       }
       if(platformOnly) {
          delete(platformViews.editor);
@@ -101,32 +95,30 @@ angular.module('algorea')
       }
    };
    $scope.syncState = function () {
-      if (!$scope.intervals.syncState) {
-         $scope.syncCounter = 0;
-         $scope.intervals.syncState = $interval(function() {
-            if ($scope.canGetState) {
-               var user_item = $scope.user_item;
-               $scope.task.getState(function(state) {
-                  $scope.task.getAnswer(function(answer) {
-                     if ($scope.canGetState && $scope.user_item === user_item && (state != $scope.user_item.sState || answer != $scope.user_item.sAnswer)) {
-                        $scope.user_item.sState = state;
-                        $scope.user_item.sAnswer = answer;
-                        ModelsManager.updated('users_items', $scope.user_item.ID, false, true);
-                     }
+      if($scope.intervals.syncState) { return; }
+      $scope.syncCounter = 0;
+      $scope.intervals.syncState = $interval(function() {
+         if(!$scope.canGetState) { return; }
+         var user_item = $scope.user_item;
+         $scope.task.getState(function(state) {
+            $scope.task.getAnswer(function(answer) {
+               if ($scope.canGetState && $scope.user_item === user_item && (state != $scope.user_item.sState || answer != $scope.user_item.sAnswer)) {
+                  $scope.user_item.sState = state;
+                  $scope.user_item.sAnswer = answer;
+                  ModelsManager.updated('users_items', $scope.user_item.ID, false, true);
+               }
 
-                     // Save current state to users_answers
-                     // TODO :: proper system
-                     // (note we do it even if the state hasn't changed, to update the timestamp)
-                     $scope.syncCounter -= 1;
-                     if($scope.syncCounter <= 0) {
-                        $scope.keepState(false, true);
-                        $scope.syncCounter = 100;
-                     }
-                  });
-               });
-            }
-         }, 3000);
-      }
+               // Save current state to users_answers
+               // TODO :: proper system
+               // (note we do it even if the state hasn't changed, to update the timestamp)
+               $scope.syncCounter -= 1;
+               if($scope.syncCounter <= 0) {
+                  $scope.keepState(false, true);
+                  $scope.syncCounter = 100;
+               }
+            });
+         });
+      }, 3000);
    };
    $scope.sync = function() {
       if ($scope.loadedUserItemID != $scope.user_item.ID) {
@@ -170,14 +162,16 @@ angular.module('algorea')
          $scope.intervals = {};
       }
    });
+
    $scope.$on('algorea.taskViewChange', function(event, toParams) {
       if ($scope.taskName != 'task-editor' && !$scope.inForum) {
-         $scope.selectTab($scope.panel == 'right' ? toParams.viewr : toParams.viewl, true);
+         tabsService.selectTab(toParams.viewr, true);
       }
    });
    $scope.$on('task-answers.openAnswer', function(event, answer) {
       $scope.task.reloadAnswer(answer, function() {});
    });
+
    $scope.taskLoaded = false;
    $scope.currentView = null;
 
@@ -205,9 +199,6 @@ angular.module('algorea')
       }
    };
 
-   // we must control views order, so using array and not object
-   $scope.views= [{tabString: 'task_statement'}];
-   $scope.viewsIndex = {defaultViewName : 0};
    $scope.setViews = function(taskViews) {
       // TODO :: better handling of task views
       if (taskViews.task && taskViews.task.includes && taskViews.task.includes.indexOf['editor'] != -1) {
@@ -231,13 +222,16 @@ angular.module('algorea')
          delete platformViews.solution;
       }
    };
+
    $scope.setTabs = function (taskViews, platformOnly) {
       $scope.lastTaskViews = taskViews;
       $scope.firstViewLoaded = false;
+
       // TODO :: find how to make it work
       if($scope.currentView == 'modify' || $scope.currentView == 'strings' || $scope.currentView == 'parameters') {
          $scope.setEditMode('edit');
       }
+
       initPlatformViews(platformOnly);
       if (!this.inForum && this.useForum) {
          platformViews.forum = {tabString: 'task_help'};
@@ -248,52 +242,33 @@ angular.module('algorea')
          $scope.hideSolution();
       }
       $scope.setViews(taskViews);
-      if (platformViews.editor) {
-         $scope.hasEditor = true;
-//         delete platformViews.editor;
-      } else {
-         $scope.hasEditor = false;
-      }
-      var scopeViews = [];
-      var scopeViewsIndex = [];
+
       $scope.askedView = $scope.currentView;
       if($scope.isDisabled($scope.askedView)) { $scope.askedView = null; }
+      var iOrder = 10;
       angular.forEach(platformViews, function(platformView, platformViewName) {
-         if (!$scope.currentView && $scope.isActive(platformViewName) && !$scope.isDisabled(platformViewName)) {
-            $scope.askedView = platformViewName;
-         }
-         scopeViewsIndex[platformViewName] = scopeViews.push({
-            string:    platformView.tabString,
-            name:      platformViewName,
-            id:        $scope.taskName+'-'+platformViewName,
-            active:    platformViewName == $scope.askedView,
-            disabled:  $scope.isDisabled(platformViewName),
-            taskViews: platformView.taskViews,
-         });
+         var newTab = {
+            id:       platformViewName,
+            title:    platformView.tabString,
+            order:    iOrder,
+            disabled: $scope.isDisabled(platformViewName),
+            callback: $scope.tabSelect.bind($scope)
+         };
+         iOrder += 1;
+         tabsService.addTab(newTab);
       });
-      $scope.views = scopeViews;
-      $scope.viewsIndex = scopeViewsIndex;
 
-      if (!$scope.askedView || !$scope.viewsIndex[$scope.askedView] || $scope.isDisabled($scope.askedView)) {
-         // Set default view
-         if($scope.attemptAutoSelected || ($scope.item.bHasAttempts && $scope.user_item && !$scope.user_item.idAttemptActive)) {
-            // Show attempts view if it's our first time on this task
-            $scope.askedView = 'attempts';
-            $scope.attemptAutoSelected = false;
-         } else if($scope.editable() && !$scope.item.sUrl) {
+      if(!tabsService.getCurTabId()) {
+         // No tab was selected
+         if($scope.editable() && !$scope.item.sUrl) {
             if(!$scope.isEditMode('edit')) {
                $scope.setEditMode('edit');
                $scope.setTabs(taskViews, platformOnly);
                return;
             }
             $scope.askedView = 'modify';
-         } else {
-            $scope.askedView = 'task';
          }
       }
-
-      $scope.views[$scope.viewsIndex[$scope.askedView] -1].active = true;
-      $scope.showView($scope.askedView);
    };
    $scope.isActive = function(view) {
      if ($scope.inForum || $scope.taskName == 'task-editor') {
@@ -302,9 +277,6 @@ angular.module('algorea')
      return (view == this.pathParams.viewr);
    };
    $scope.isDisabled = function(view) {
-     if (!$scope.inForum && this.panel=='left' && this.pathParams.itemsOnBothSides && view == $scope.resolutionViewName) {
-        return true;
-     }
      if(view == 'task' && !$scope.item.sUrl) {
         return true;
      }
@@ -313,68 +285,14 @@ angular.module('algorea')
      }
      return false;
    };
-   $scope.updateModifyTab = function() {
-     if($scope.viewsIndex && $scope.viewsIndex['modify']) {
-       $scope.views[$scope.viewsIndex['modify']].disabled = !$scope.modifyUrl;
-     }
-   };
-   $scope.getTabTitle = function(view) {
-     if(view.name == 'modify' && view.disabled) {
-       return 'task_modify_disabled';
-     } else {
-       return '';
-     }
-   };
 
-   $scope.hasObjectChanged = function(modelName, record) {
-      if (!record) {
-         return false;
-      }
-      return ModelsManager.hasRecordChanged(modelName, record.ID);
-   };
-
-   $scope.saveObject = function(modelName, record) {
-      if (record) {
-         ModelsManager.updated(modelName, record.ID);
-      }
-   };
-
-   $scope.resetObjectChanges = function(modelName, record) {
-      if (record) {
-         ModelsManager.resetRecordChanges(modelName, record.ID);
-      }
-   };
-
-   $scope.openSeparateEditor = function() {
-      $scope.showEditor = true;
-   };
-   $scope.selectTab = function(tabname, fromURL) {
-      if (!tabname || $scope.isDisabled(tabname)) {
+   $scope.tabSelect = function(tabname, isMine) {
+      if(!isMine) {
+         $scope.showTask = false;
+         $scope.currentView = null;
          return;
       }
-//      if (tabname == $scope.resolutionViewName && !this.pathParams.itemsOnBothSides) {
-//         //return this.goToResolution();
-//         $scope.openSeparateEditor();
-//         return;
-//      }
-      if (tabname != $scope.currentView) {
-         if (!$scope.inForum && $scope.taskName != 'task-editor' && !fromURL) {
-            var params = {
-               path:   this.pathParams.pathStr,
-               sell:   this.pathParams.sell,
-               selr:   this.pathParams.selr,
-               viewl:  this.pathParams.viewl,
-               viewr:  this.pathParams.viewr,
-            };
-            if (this.panel == 'right') { params.viewr = tabname; } else { params.viewl = tabname; }
-            if ($state) {
-               $state.go('contents', params, {notify: false});
-            }
-         }
-         if($scope.currentView && $scope.viewsIndex[$scope.currentView]) {
-            $scope.views[$scope.viewsIndex[$scope.currentView]-1].active = false;
-         }
-         $scope.views[$scope.viewsIndex[tabname] -1].active = true;
+      if(tabname != $scope.currentView) {
          $scope.showView(tabname);
       }
       if ($rootScope.refreshSizes) {
@@ -420,7 +338,7 @@ angular.module('algorea')
 
    $scope.userCreateAttempt = function() {
       $scope.createAttempt(function () {
-         $scope.selectTab('task');
+         tabsService.selectTab('task');
          });
    };
 
@@ -482,7 +400,7 @@ angular.module('algorea')
    };
 
    $scope.loadAnswer = function(answer) {
-      $scope.selectTab('task');
+      tabsService.selectTab('task');
       $scope.keepState(true);
       $scope.user_item.sState = answer.sState;
       $scope.user_item.sAnswer = answer.sAnswer;
@@ -535,48 +453,8 @@ angular.module('algorea')
          $scope.manualSyncDisabled = false;
       }, 3000);
    };
-}]);
-
-angular.module('algorea')
-   .controller('courseController', ['$scope', '$rootScope', '$interval', function ($scope, $rootScope, $interval) {
-   $scope.interval = null;
-   $scope.courseLoaded = /*false*/true;
-   $scope.updateHeight = function(height) {
-      $scope.taskIframe.css('height', parseInt(height));
-      if ($rootScope.refreshSizes) {
-         $rootScope.refreshSizes();
-      }
-   };
-   var lastheight = 0;
-   $scope.syncHeight = function () {
-      if (!$scope.interval) {
-         $scope.interval = $interval(function() {
-            $scope.task.getHeight(function(height) {
-               if (height == lastheight) {
-                  return;
-               }
-               $scope.updateHeight(height);
-               $scope.courseLoaded = true;
-               height = lastheight;
-            });
-         }, 1000);
-      }
-   };
-   $scope.$on('$destroy', function() {
-      if ($scope.interval) {
-         $interval.cancel($scope.interval);
-      }
-      if (!$scope.item.bUsesAPI) {
-         return;
-      }
-      if ($scope.task) {
-         $scope.task.unload(function(){});
-      }
-   });
-   $scope.onCourseLoaded = function() {
-      $scope.syncHeight();
-   };
 }])
+
 
 .filter('orderObjectBy', function() {
    return function(items, field, reverse) {

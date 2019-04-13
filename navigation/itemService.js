@@ -127,7 +127,7 @@ angular.module('algorea')
       function getIdsToSync(reset) {
          var pathItems = [config.domains.current.ProgressRootItemId, config.domains.current.DiscoverRootItemId, config.domains.current.ContestRootItemId];
          angular.forEach(config.domains.current.tabs, function(tab) {
-            var itemID = tab.path.split('/')[0];
+            var itemID = tab.path.split('-')[0];
             if (parseInt(itemID) && pathItems.indexOf(itemID) == -1) {
                pathItems.push(itemID);
             }
@@ -209,8 +209,8 @@ angular.module('algorea')
                var cb = null;
                cb = function() {
                   callback();
-                  var idx = callbacks.general[0].indexOf(cb);
-                  if(idx > -1) { callbacks.general[0].splice(idx, 1); }
+//                  var idx = callbacks.general[0].indexOf(cb);
+//                  if(idx > -1) { callbacks.general[0].splice(idx, 1); }
                };
                callbacks.general[0].push(cb);
             }
